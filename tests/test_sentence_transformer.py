@@ -790,3 +790,38 @@ def test_load_adapter_with_revision():
     )
     embeddings = model.encode("Hello, World!")
     assert embeddings.shape == (128,)
+
+
+def test_token_counting(stsb_bert_tiny_model: SentenceTransformer) -> None:
+    model = stsb_bert_tiny_model
+
+    text = "This is a test sentence"
+    embeddings, tokens = model.encode(text, return_token_usage=True)
+    assert isinstance(tokens, int)
+    assert tokens > 0
+
+    texts = ["First sentence", "Second longer sentence", "Third sentence"]
+    embeddings, tokens = model.encode(texts, return_token_usage=True)
+    assert isinstance(tokens, int)
+    assert tokens > 0
+
+    prompt = "query: "
+    embeddings, tokens_with_prompt = model.encode(texts, prompt=prompt, return_token_usage=True)
+    assert tokens_with_prompt > tokens  # Should have more tokens due to prompt
+
+    embeddings = model.encode(text, return_token_usage=False)
+    assert not isinstance(embeddings, tuple)
+
+
+def test_token_counting_multi_process(stsb_bert_tiny_model: SentenceTransformer) -> None:
+    model = stsb_bert_tiny_model
+
+    texts = ["First sentence", "Second sentence", "Third sentence"] * 10
+    embeddings, tokens = model.encode(texts, return_token_usage=True, batch_size=3, num_workers=2)
+    assert isinstance(tokens, int)
+    assert tokens > 0
+
+    embeddings_single, tokens_single = model.encode(texts, return_token_usage=True, batch_size=3, num_workers=0)
+
+    # Token counts should match regardless of process count
+    assert tokens == tokens_single

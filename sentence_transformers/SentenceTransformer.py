@@ -404,8 +404,9 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
         convert_to_tensor: Literal[False] = ...,
         device: str = ...,
         normalize_embeddings: bool = ...,
+        return_token_usage: bool = ...,
         **kwargs,
-    ) -> Tensor: ...
+    ) -> Tensor | tuple[Tensor, int]: ...
 
     @overload
     def encode(
@@ -421,8 +422,9 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
         convert_to_tensor: Literal[False] = ...,
         device: str = ...,
         normalize_embeddings: bool = ...,
+        return_token_usage: bool = ...,
         **kwargs,
-    ) -> np.ndarray: ...
+    ) -> np.ndarray | tuple[np.ndarray, int]: ...
 
     @overload
     def encode(
@@ -438,8 +440,9 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
         convert_to_tensor: Literal[True] = ...,
         device: str = ...,
         normalize_embeddings: bool = ...,
+        return_token_usage: bool = ...,
         **kwargs,
-    ) -> Tensor: ...
+    ) -> Tensor | tuple[Tensor, int]: ...
 
     @overload
     def encode(
@@ -455,8 +458,9 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
         convert_to_tensor: Literal[False] = ...,
         device: str = ...,
         normalize_embeddings: bool = ...,
+        return_token_usage: bool = ...,
         **kwargs,
-    ) -> list[Tensor]: ...
+    ) -> list[Tensor] | tuple[list[Tensor], int]: ...
 
     def encode(
         self,
@@ -471,8 +475,9 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
         convert_to_tensor: bool = False,
         device: str = None,
         normalize_embeddings: bool = False,
+        return_token_usage: bool = False,
         **kwargs,
-    ) -> list[Tensor] | np.ndarray | Tensor:
+    ) -> list[Tensor] | np.ndarray | Tensor | tuple[list[Tensor] | np.ndarray | Tensor, int]:
         """
         Computes sentence embeddings.
 
@@ -568,6 +573,7 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
                 )
 
         extra_features = {}
+        total_tokens = 0
         if prompt is not None:
             sentences = [prompt + sentence for sentence in sentences]
 
@@ -576,7 +582,7 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
             tokenized_prompt = self.tokenize([prompt])
             if "input_ids" in tokenized_prompt:
                 extra_features["prompt_length"] = tokenized_prompt["input_ids"].shape[-1] - 1
-
+                total_tokens += extra_features["prompt_length"]
         if device is None:
             device = self.device
 
@@ -585,10 +591,10 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
         all_embeddings = []
         length_sorted_idx = np.argsort([-self._text_length(sen) for sen in sentences])
         sentences_sorted = [sentences[idx] for idx in length_sorted_idx]
-
         for start_index in trange(0, len(sentences), batch_size, desc="Batches", disable=not show_progress_bar):
             sentences_batch = sentences_sorted[start_index : start_index + batch_size]
             features = self.tokenize(sentences_batch)
+            total_tokens += features["attention_mask"].sum().item()
             if self.device.type == "hpu":
                 if "input_ids" in features:
                     curr_tokenize_len = features["input_ids"].shape
@@ -677,6 +683,9 @@ class SentenceTransformer(nn.Sequential, FitMixin, PeftAdapterMixin):
 
         if input_was_string:
             all_embeddings = all_embeddings[0]
+
+        if return_token_usage:
+            return all_embeddings, total_tokens
 
         return all_embeddings
 
